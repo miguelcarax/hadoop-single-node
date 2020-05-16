@@ -10,6 +10,6 @@
     hadoop_version: 3.2.1
 
   roles:
-  - role: geerlingguy.repo-epel
-  - role: geerlingguy.java
-  - role: hadoop-single-node
+    - role: geerlingguy.repo-epel
+    - role: geerlingguy.java
+    - role: hadoop-single-node
