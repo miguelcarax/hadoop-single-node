@@ -1,0 +1,15 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  vars:
+    java_packages:
+      - 'java-1.8.0-openjdk-1.8.0.252.b09-2.el7_8.x86_64'
+    java_home: '/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.252.b09-2.el7_8.x86_64/jre/'
+    hadoop_version: 3.2.1
+
+  roles:
+  - role: geerlingguy.repo-epel
+  - role: geerlingguy.java
+  - role: hadoop-single-node

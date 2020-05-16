@@ -1,0 +1,91 @@
+---
+- name: Verify
+  become: true
+  hosts: all
+
+  vars:
+    hadoop_version: 3.2.1
+    hadoop_installation_dir: /opt
+    hadoop_testing_user: hadoop_testing_user
+
+
+  pre_tasks:
+    - name: "Create {{ hadoop_testing_user }} user on machine"
+      user:
+        name: "{{ hadoop_testing_user }}"
+
+  tasks:
+    - name: Check all .xml files are well-formed
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hadoop conftest"
+
+    - name: Check NameNode API REST
+      wait_for:
+        host: 127.0.0.1
+        timeout: 60
+        port: 9870
+
+    - name: Check HDFS Safe Mode is OFF
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfsadmin \
+        -safemode get"
+      register: hdfs_safemode
+      failed_when:
+        - "'ON' in hdfs_safemode.stdout"
+        - hdfs_safemode.rc != 0
+
+    - name: Check HDFS filesystem health
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs fsck /"
+      register: hdfs_fsck
+      failed_when:
+        - "not 'HEALTHY' in hdfs_fsck.stdout"
+        - hdfs_fsck.rc != 0
+
+    - name: Create testing user home directory in HDFS
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -mkdir -p \
+        /user/{{ hadoop_testing_user }}"
+
+    - name: Setup permissions on testing user home directory in HDFS
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -chown \
+        {{ hadoop_testing_user }}:{{ hadoop_testing_user }} /user/{{ hadoop_testing_user }}"
+
+    - name: Create sample file in HDFS
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -touchz \
+        /user/{{ hadoop_testing_user }}/zero-size-file"
+      become_user: "{{ hadoop_testing_user }}"
+
+    - name: Delete sample file in HDFS
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -rm -skipTrash \
+        /user/{{ hadoop_testing_user }}/zero-size-file"
+      become_user: "{{ hadoop_testing_user }}"
+
+    - name: Launch MapReduce Pi digits calculator example
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/yarn jar \
+          {{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}\
+            /share/hadoop/mapreduce/hadoop-mapreduce-examples-{{ hadoop_version }}.jar \
+            pi 10 10"
+      become_user: "{{ hadoop_testing_user }}"
+
+    - name: Launch MapReduce Teragen example
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/yarn jar \
+          {{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}\
+            /share/hadoop/mapreduce/hadoop-mapreduce-examples-{{ hadoop_version }}.jar \
+            teragen 100 /user/{{ hadoop_testing_user }}/teragen-output"
+      become_user: "{{ hadoop_testing_user }}"
+      register: teragen
+
+    - name: Cleanup MapReduce Teragen example output
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -rm -r -skipTrash \
+        /user/{{ hadoop_testing_user }}/teragen-output"
+      become_user: "{{ hadoop_testing_user }}"
+      when: teragen.rc == 0
+
+    - name: Cleaning up testing user home directory in HDFS
+      command: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -rm -r -skipTrash \
+        /user/{{ hadoop_testing_user }}"
+
+
+  post_tasks:
+    - name: "Delete {{ hadoop_testing_user }} user on machine"
+      user:
+        name: "{{ hadoop_testing_user }}"
+        state: absent
+        remove: true

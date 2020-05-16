@@ -1,0 +1,107 @@
+---
+- name: Ensure required packages are installed
+  yum:
+    name: pdsh
+    state: present
+
+- name: "Download and extract hadoop tarball"
+  unarchive:
+    src: "https://downloads.apache.org/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+    remote_src: true
+    mode: 0755
+    dest: "{{ hadoop_installation_dir }}"
+
+- name: 'Ensure ${JAVA_HOME}/bin/java exists'
+  command: "{{ java_home }}/bin/java -version"
+  # register: java_command_result
+  changed_when: false
+  # failed_when: not java_command_result.rc == 0
+
+- name: Ensure JAVA_HOME is set on hadoop config files
+  lineinfile:
+    path: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/etc/hadoop/hadoop-env.sh"
+    regexp: '^export JAVA_HOME='
+    insertafter: '^# export JAVA_HOME='
+    line: "export JAVA_HOME={{ java_home }}"
+
+# TODO: Generate only templates for the .xml who has new properties to add
+- name: Generate custom hadoop configuration .xml files
+  template:
+    dest: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/etc/hadoop/{{ item }}"
+    src: "{{ item }}.j2"
+  loop:
+    - core-site.xml
+    - hdfs-site.xml
+    - yarn-site.xml
+    - mapred-site.xml
+
+- name: Ensure directory for ssh keys exists
+  file:
+    path: "{{ ansible_user_dir }}/.ssh"
+    state: directory
+    mode: 0600
+
+- name: Generate ssh keys
+  openssh_keypair:
+    # pub key will be id_rsa.pub
+    path: "{{ ansible_user_dir }}/.ssh/id_rsa"
+    size: 2048
+    mode: 0400
+  register: ssh_keypairs
+
+- name: Add generated key to authorized_keys
+  authorized_key:
+    user: "{{ ansible_user_id }}"
+    key: "{{ ssh_keypairs.public_key }}"
+    state: present
+    path: "{{ ansible_user_dir }}/.ssh/authorized_keys"
+
+- name: Format HDFS NameNode
+  command: |
+    {{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs namenode -format -nonInteractive
+  register: format_nn
+  failed_when: "'ERROR' in format_nn.stderr"
+  changed_when: format_nn.rc == 0
+
+# <COMMAND>_<SUBCOMMAND>_USER vars define which users are allowed to run the <COMMAND> command
+# Ex: HDFS_NAMENODE_USER=root will only allow root user to run 'hdfs namenode' command
+- name: "Allow {{ ansible_user_id }} to start Hadoop daemons"
+  blockinfile:
+    path: "{{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/etc/hadoop/hadoop-env.sh"
+    insertafter: EOF
+    block: |
+      export HDFS_NAMENODE_USER={{ ansible_user_id }}
+      export HDFS_SECONDARYNAMENODE_USER={{ ansible_user_id }}
+      export HDFS_DATANODE_USER={{ ansible_user_id }}
+      export YARN_RESOURCEMANAGER_USER={{ ansible_user_id }}
+      export YARN_NODEMANAGER_USER={{ ansible_user_id }}
+
+- name: Start HDFS daemons
+  command: |
+    {{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/sbin/start-dfs.sh
+
+- name: Wait NameNode to be available
+  wait_for:
+    host: 127.0.0.1
+    delay: 10
+    timeout: 90
+    port: 9870
+
+- name: Start YARN daemons
+  command: |
+    {{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/sbin/start-yarn.sh
+
+- name: Wait ResourceManager to be available
+  wait_for:
+    host: 127.0.0.1
+    delay: 10
+    timeout: 90
+    port: 8088
+
+- name: Create HDFS /tmp dir
+  command: |
+    {{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -mkdir /tmp
+
+- name: Set HDFS /tmp dir permissions to 1777
+  command: |
+    {{ hadoop_installation_dir }}/hadoop-{{ hadoop_version }}/bin/hdfs dfs -chmod -R 1777 /tmp

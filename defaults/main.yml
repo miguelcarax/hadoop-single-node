@@ -1,0 +1,26 @@
+---
+hadoop_version: 3.2.1
+
+hadoop_installation_dir: /opt
+
+
+hadoop_core_site_properties:
+  - name: fs.defaultFS
+    value: 'hdfs://localhost:9000'
+
+hadoop_hdfs_site_properties:
+  - name: dfs.replication
+    value: 1
+
+hadoop_yarn_site_properties:
+  - name: yarn.nodemanager.aux-services
+    value: mapreduce_shuffle
+  - name: yarn.nodemanager.env-whitelist
+    value: "JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,\
+     CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME"
+
+hadoop_mapred_site_properties:
+  - name: mapreduce.framework.name
+    value: yarn
+  - name: mapreduce.application.classpath
+    value: '$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/*:$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/lib/*'
