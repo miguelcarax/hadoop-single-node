@@ -11,8 +11,8 @@ driver:
 
 platforms:
   - name: single-node-cluster-docker
-    image: my-own/docker-centos7-ansible-ssh:latest
-    dockerfile: Dockerfile.j2
+    image: home/centos-systemd:7
+    dockerfile: Dockerfile
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
     privileged: true
